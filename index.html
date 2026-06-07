@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ggml_gemv_q6_K_8x4_q8_K Execution Simulator</title>
+    <style>
+        :root {
+            /* Standard Theme Variables */
+            --bg-page: #f8fafc;
+            --bg-panel: #ffffff;
+            --border: #cbd5e1;
+            --text-main: #0f172a;
+            --text-dim: #475569;
+            
+            /* Loop & Flowchart Colors */
+            --c-b: #0ea5e9;       
+            --c-half: #22c55e;    
+            --c-sb: #f59e0b;      
+            --c-g: #e11d48;       
+            --c-chunk: #8b5cf6;   
+            
+            /* Flowchart specific */
+            --panel: #ffffff;
+            --panel2: #f8fafc;
+            --line: #cbd5e1;
+            --dim: #64748b;
+            --ink: #0f172a;
+            --mono: 'Courier New', Courier, monospace;
+            --acc: #d946ef;
+            --faint: #94a3b8;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-page);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            margin: 0;
+            overflow-x: hidden;
+        }
+        h1 { margin-bottom: 5px; color: #0284c7; text-align: center;}
+        p.subtitle { color: var(--text-dim); margin-bottom: 20px; text-align: center; max-width: 800px; line-height: 1.5; font-size: 15px;}
+        
+        .section-header { width: 100%; max-width: 1200px; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; margin-top: 10px; margin-bottom: 15px; color: #334155; text-transform: uppercase; letter-spacing: 1px; font-size: 15px; font-weight: 800;}
+
+        /* Controls */
+        .controls { display: flex; gap: 10px; justify-content: center; margin-bottom: 15px;}
+        button { background-color: var(--bg-panel); color: var(--text-main); border: 1px solid var(--border); padding: 6px 14px; border-radius: 5px; cursor: pointer; font-size: 13px; font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,0.05);}
+        button:hover { background-color: #f1f5f9; border-color: #94a3b8;}
+        button.primary { background-color: var(--c-b); border-color: #0284c7; color: white;}
+        button.primary:hover { background-color: #0284c7; color: white;}
+
+        /* 5 Tiers */
+        .tier-container { width: 100%; max-width: 1200px; display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px;}
+        .tier { display: flex; justify-content: center; gap: 6px; padding: 8px; background-color: var(--bg-panel); border-radius: 8px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);}
+        .card { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 6px; text-align: center; flex: 1; opacity: 0.4; transition: all 0.2s ease; color: var(--text-dim);}
+        .card.active { opacity: 1; transform: scale(1.02); box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-width: 2px; color: var(--text-main);}
+        
+        #tier-b .card.active { border-color: var(--c-b); background-color: #e0f2fe; color: #0369a1;}
+        #tier-half .card.active { border-color: var(--c-half); background-color: #dcfce7; color: #15803d;}
+        #tier-sb .card.active { border-color: var(--c-sb); background-color: #fef3c7; color: #b45309;}
+        #tier-g .card.active { border-color: var(--c-g); background-color: #ffe4e6; color: #be123c;}
+        #tier-chunk .card.active { border-color: var(--c-chunk); background-color: #ede9fe; color: #6d28d9;}
+        
+        .card-title { font-weight: bold; margin-bottom: 2px; font-size: 11px; }
+        .card-desc { font-size: 10px; color: inherit; opacity: 0.8;}
+
+        /* Math Layout (Minimap + Vertical Vectors) */
+        .math-layout { display: flex; gap: 15px; width: 100%; max-width: 1200px; margin-bottom: 20px; align-items: stretch; }
+        
+        .matrix-wrapper { flex: 1; display: flex; border: 2px solid var(--border); border-radius: 8px; background-color: var(--bg-panel); overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+        .row-label-panel { width: 70px; background-color: #f1f5f9; border-right: 1px solid var(--border); display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 10px; flex-shrink: 0; box-shadow: 2px 0 8px rgba(0,0,0,0.05); z-index: 10; }
+        .row-label-panel strong { color: #0284c7; font-size: 14px; }
+        .row-label-panel span { color: var(--text-dim); font-size: 11px; text-align: center; margin-top: 4px; line-height: 1.3; }
+
+        .matrix-container { width: 100%; overflow-x: auto; position: relative; scrollbar-color: var(--border) #f1f5f9; display: flex; flex-direction: column;}
+        
+        .matrix-labels { display: flex; justify-content: space-between; width: 2048px; min-width: 2048px; padding: 3px 0; color: var(--text-dim); font-size: 11px; font-weight: bold; background: #f8fafc; border-bottom: 1px solid var(--border); flex-shrink: 0;}
+        .matrix-labels span { width: 256px; text-align: center; border-left: 1px solid var(--border); box-sizing: border-box; }
+        .matrix-labels span:first-child { border-left: none; }
+        #matrixCanvas { display: block; width: 2048px !important; min-width: 2048px !important; height: 400px; flex-shrink: 0;}
+
+        /* Vertical Vectors Panel */
+        .vectors-panel { display: flex; gap: 10px; border: 2px solid var(--border); border-radius: 8px; background-color: var(--bg-panel); padding: 10px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); flex-shrink: 0;}
+        .v-col-wrapper { display: flex; flex-direction: column; align-items: center; width: 65px;}
+        .v-header { font-family: inherit; font-size: 11px; font-weight: bold; text-align: center; margin-bottom: 8px; color: var(--text-dim); line-height: 1.2;}
+        .v-box-container { border: 1px solid var(--border); border-radius: 6px; padding: 4px; background: #f8fafc; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px;}
+        .v-slot { height: 21px; border: 1px solid #e2e8f0; border-radius: 3px; display: flex; justify-content: center; align-items: center; font-size: 9px; color: #94a3b8; background: #ffffff; transition: 0.2s;}
+        
+        /* Vector State Colors */
+        .v-slot.active-h { background: var(--c-chunk); color: white; border-color: #7c3aed; font-weight: bold; box-shadow: 0 0 5px rgba(139, 92, 246, 0.4);}
+        .v-slot.active-s { background: var(--c-g); color: white; border-color: #be123c; font-weight: bold; box-shadow: 0 0 5px rgba(225, 29, 72, 0.4);}
+        .v-slot.context-s { background: #ffe4e6; color: #be123c; border-color: #fda4af;}
+
+        /* Hardware Panel */
+        .hw-panel { width: 100%; max-width: 1200px; background-color: var(--bg-panel); border: 2px solid var(--border); border-radius: 8px; padding: 15px; box-sizing: border-box; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);}
+        .dual-pipeline { display: flex; flex-direction: column; gap: 15px; }
+        .pipeline-track { background: #f8fafc; border: 1px dashed #94a3b8; border-radius: 6px; padding: 10px; position: relative;}
+        .track-title { position: absolute; top: -10px; left: 15px; background: #ffffff; padding: 0 8px; font-size: 12px; font-weight: bold; border: 1px solid var(--border); border-radius: 4px;}
+        .track-title.low { color: #0369a1; border-color: var(--c-b);}
+        .track-title.high { color: #b45309; border-color: var(--c-sb);}
+
+        .register-row { display: flex; align-items: center; margin-bottom: 6px; margin-top: 8px;}
+        .register-label { width: 120px; font-weight: bold; color: var(--text-dim); font-size: 11px; line-height: 1.2;}
+        .register-slots { display: grid; grid-template-columns: repeat(16, 1fr); gap: 2px; flex-grow: 1; }
+        
+        .hw-slot { background: #ffffff; height: 34px; border: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 9px; border-radius: 2px; transition: 0.2s; text-align: center; line-height: 1.1; overflow: hidden; color: #334155;}
+        
+        #hw-explanation { font-size: 14px; color: #4338ca; text-align: center; margin-bottom: 10px; min-height: 20px; font-weight: bold; background: #e0e7ff; padding: 8px; border-radius: 4px; border: 1px solid #c7d2fe;}
+
+        /* Hardware Animation States */
+        .active-w { background: #fdf4ff !important; color: #86198f !important; border-color: #d946ef !important;}
+        .active-v { background: #f3e8ff !important; color: var(--c-chunk) !important; border-color: var(--c-chunk) !important;}
+        .active-v-dup { background: var(--c-chunk) !important; color: white !important; border-color: #7c3aed !important;}
+        .active-math { background: #fef08a !important; color: #854d0e !important; font-weight: bold; border-color: #eab308 !important;}
+        .active-acc { background: var(--c-g) !important; color: white !important; font-weight: bold; border-color: #be123c !important;}
+
+        /* --- FLOWCHART CSS --- */
+        .hr { font-size: 11px; text-transform: uppercase; letter-spacing: 1.8px; color: var(--dim); border-top: 2px solid var(--line); padding-top: 10px; margin: 34px 0 14px; font-weight: 600; width: 100%; max-width: 1200px;}
+        .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; box-shadow: 0 1px 3px rgba(30,50,80,.05); width: 100%; max-width: 1200px; box-sizing: border-box;}
+        code { font-family: var(--mono); color: #7c3aed; background: #f3eefe; padding: 1px 5px; border-radius: 4px; font-size: .9em;}
+        .flow { display: flex; flex-direction: column; gap: 9px; font-family: inherit; font-size: 13px; }
+        .pill { align-self: center; background: #eef4ff; border: 1px solid var(--c-b); border-radius: 22px; padding: 7px 18px; color: #1e3a8a; font-weight: 600;}
+        .pill.end { background: #fdf0fb; border-color: var(--acc); color: #86198f;}
+        .step { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; color: var(--dim);}
+        .step b { color: var(--ink);}
+        .loop { border: 1px solid var(--line); border-left-width: 4px; border-radius: 8px; padding: 10px 12px; background: #fcfdff;}
+        .loop > .lh { font-weight: 700; margin-bottom: 9px; font-size: 12px;}
+        .loop > .lh .rng { color: var(--dim); font-weight: 400;}
+        .loop .inner { display: flex; flex-direction: column; gap: 8px; padding-left: 6px;}
+        
+        .L-b { border-left-color: var(--c-b);} .L-b > .lh { color: var(--c-b);}
+        .L-half { border-left-color: var(--c-half);} .L-half > .lh { color: var(--c-half);}
+        .L-sb { border-left-color: var(--c-sb);} .L-sb > .lh { color: var(--c-sb);}
+        .L-g { border-left-color: var(--c-g);} .L-g > .lh { color: var(--c-g);}
+        .L-chunk { border-left-color: var(--c-chunk);} .L-chunk > .lh { color: var(--c-chunk);}
+        
+        .hot { background: #fdf0fb; border-color: var(--acc); color: #86198f;}
+        .arrowdown { align-self: center; color: var(--faint); font-size: 13px; line-height: .5;}
+
+    </style>
+</head>
+<body>
+
+    <h1>Inside the Matrix: <code style="color: inherit; background: none; font-size: 0.9em;">ggml_gemv_q6_K_8x4_q8_K</code></h1>
+    <p class="subtitle">An interactive architectural breakdown of the Q6_K matrix-vector multiplication algorithm.<br>Explore the 64-column physical memory leap, the dual-track NEON pipeline, and the inner SDOT execution loop.</p>
+
+    <div class="section-header">1. Memory Pointer Navigation (5-Tier Loop)</div>
+    
+    <div class="controls">
+        <button id="btn-back">Step Back</button>
+        <button id="btn-forward">Step Forward</button>
+        <button id="btn-reset">Reset</button>
+        <span style="display:inline-block; width: 10px;"></span>
+        <div style="background: #ffffff; padding: 4px 12px; border-radius: 5px; border: 1px solid var(--border); display: flex; align-items: center; box-shadow: 0 1px 2px rgba(0,0,0,0.05); font-size: 13px;">
+            <strong style="color: #4338ca; margin-right: 8px;">TARGET:</strong>
+            <span id="exact-indices" style="color: var(--text-main); font-weight: 600;">Rows 0-3 | Cols 0-3 AND Cols 64-67</span>
+        </div>
+    </div>
+
+    <div class="tier-container">
+        <div class="tier" id="tier-b"></div>
+        <div class="tier" id="tier-half"></div>
+        <div class="tier" id="tier-sb"></div>
+        <div class="tier" id="tier-g"></div>
+        <div class="tier" id="tier-chunk"></div>
+    </div>
+
+    <div class="math-layout">
+        <div class="matrix-wrapper">
+            <div class="row-label-panel">
+                <strong>X = 0</strong>
+                <span>Vocab Rows<br>0&nbsp;-&nbsp;7</span>
+            </div>
+            <div class="matrix-container" id="scroll-container">
+                <div class="matrix-labels">
+                    <span>Block 0</span><span>Block 1</span><span>Block 2</span><span>Block 3</span>
+                    <span>Block 4</span><span>Block 5</span><span>Block 6</span><span>Block 7</span>
+                </div>
+                <canvas id="matrixCanvas" width="2048" height="400"></canvas>
+            </div>
+        </div>
+
+        <div class="vectors-panel">
+            <div class="v-col-wrapper">
+                <div class="v-header">h<br><span style="color:#94a3b8; font-size:9px; font-weight:normal;">(Low Run)</span></div>
+                <div class="v-box-container" id="vec-h-low"></div>
+            </div>
+            <div class="v-col-wrapper">
+                <div class="v-header">h<br><span style="color:#94a3b8; font-size:9px; font-weight:normal;">(High Run)</span></div>
+                <div class="v-box-container" id="vec-h-high"></div>
+            </div>
+            <div style="display:flex; align-items:center; font-weight:bold; color:var(--text-dim);"> = </div>
+            <div class="v-col-wrapper">
+                <div class="v-header">s<br><span style="color:#94a3b8; font-size:9px; font-weight:normal;">(Logits)</span></div>
+                <div class="v-box-container" id="vec-s" style="height: 100%; justify-content: space-around;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section-header">2. Dual-Track NEON Pipeline (Executing 'Chunk')</div>
+    
+    <div class="hw-panel">
+        <div class="controls" style="justify-content: flex-start; margin-bottom: 5px;">
+            <button id="btn-hw-next" class="primary">Execute Hardware Step</button>
+            <button id="btn-hw-reset">Reset Hardware</button>
+        </div>
+        <div id="hw-explanation">Click 'Execute' to pull the two separated nibbles simultaneously.</div>
+
+        <div class="dual-pipeline">
+            
+            <div class="pipeline-track">
+                <div class="track-title low" id="lbl-track-low">Low Run SDOT (Cols 0-3)</div>
+                <div class="register-row">
+                    <div class="register-label">Vector Reg (v30.16b)<br><span>[16 x 8-bit] q8_l</span></div>
+                    <div class="register-slots" id="reg-vec-low"></div>
+                </div>
+                <div class="register-row">
+                    <div class="register-label">Matrix Reg (v29.16b)<br><span>[16 x 8-bit] q6_l</span></div>
+                    <div class="register-slots" id="reg-mat-low"></div>
+                </div>
+                <div class="register-row">
+                    <div class="register-label">Accumulator (v31.4s)<br><span>sb_acc_l</span></div>
+                    <div class="register-slots" style="display: block;">
+                        <div class="hw-slot" id="reg-acc-low" style="width: 120px; font-size: 13px; font-weight: bold; flex-direction: row;">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pipeline-track">
+                <div class="track-title high" id="lbl-track-high">High Run SDOT (Cols 64-67)</div>
+                <div class="register-row">
+                    <div class="register-label">Vector Reg (v28.16b)<br><span>[16 x 8-bit] q8_h</span></div>
+                    <div class="register-slots" id="reg-vec-high"></div>
+                </div>
+                <div class="register-row">
+                    <div class="register-label">Matrix Reg (v27.16b)<br><span>[16 x 8-bit] q6_h</span></div>
+                    <div class="register-slots" id="reg-mat-high"></div>
+                </div>
+                <div class="register-row">
+                    <div class="register-label">Accumulator (v26.4s)<br><span>sb_acc_h</span></div>
+                    <div class="register-slots" style="display: block;">
+                        <div class="hw-slot" id="reg-acc-high" style="width: 120px; font-size: 13px; font-weight: bold; flex-direction: row;">0</div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <div class="hr">4 · The whole method, start to finish</div>
+    <div class="panel">
+      <div class="flow">
+        <div class="pill" style="font-family: var(--mono)">START &nbsp;gemv( W = Q6_K matrix , h = Q8_K vector )</div>
+        <div class="arrowdown">▼</div>
+        <div class="step"><b>nb = 2048 / 256 = 8</b> — each matrix row spans 8 super-blocks</div>
+        <div class="arrowdown">▼</div>
+        <div class="loop L-b">
+          <div class="lh">↻ for x = 0 … 16031 <span class="rng">// each x = 8 vocab rows → 8 logits</span></div>
+          <div class="inner">
+            <div class="step">zero the 8 logit accumulators</div>
+            <div class="loop L-b">
+              <div class="lh">↻ for b = 0 … 7 <span class="rng">// across 2048 dims, 256 at a time</span></div>
+              <div class="inner">
+                <div class="step">load 8 super-block scales d · 16 int8 sub-scales · precompute <b>bias = 32·Σ scale·bsum</b> (the deferred −32)</div>
+                <div class="loop L-half">
+                  <div class="lh">↻ for half = 0 … 1 <span class="rng">// 128 dims each</span></div>
+                  <div class="inner">
+                    <div class="loop L-sb">
+                      <div class="lh">↻ for sb = 0 … 3</div>
+                      <div class="inner">
+                        <div class="step"><b>low run</b> = base + sb·16, &nbsp;<b>high run</b> = low + 64</div>
+                        <div class="loop L-g">
+                          <div class="lh">↻ for g = 0 … 1 <span class="rng">// rows 0–3 / 4–7</span></div>
+                          <div class="inner">
+                            <div class="loop L-chunk">
+                              <div class="lh">↻ for chunk = 0 … 3 <span class="rng">// 4 dims/SDOT</span></div>
+                              <div class="inner"><div class="step hot">reconstruct 6-bit weights → <b>2 × SDOT</b> (low &amp; high runs)</div></div>
+                            </div>
+                            <div class="step">acc[g] += dot<sub>lo</sub>·scale[lo] + dot<sub>hi</sub>·scale[hi]</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="step">acc[g] −= bias[g] &nbsp;(apply −32) &nbsp;·&nbsp; logit += float(acc[g]) · d_q6 · d_q8</div>
+              </div>
+            </div>
+            <div class="step">store 8 logits → <code>s[x·8 … x·8+7]</code></div>
+          </div>
+        </div>
+        <div class="arrowdown">▼</div>
+        <div class="pill end" style="font-family: var(--mono)">END — s = full logit vector (128,256)</div>
+      </div>
+    </div>
+
+    <script>
+        // --- MACRO STATE ---
+        let state = { b: 0, half: 0, sb: 0, g: 0, chunk: 0 };
+        const limits = { b: 7, half: 1, sb: 3, g: 1, chunk: 3 };
+        
+        // --- MICRO STATE ---
+        let hwStep = 0;
+        let R = 0; 
+        let CLow = 0;
+        let CHigh = 0;
+
+        const config = {
+            b: { count: 8, title: "Block", desc: "256 cols" },
+            half: { count: 2, title: "Half", desc: "128 cols" },
+            sb: { count: 4, title: "Iter (sb)", desc: "2x16 cols (Gap: 64)" },
+            g: { count: 2, title: "Group", desc: "4 rows" },
+            chunk: { count: 4, title: "Chunk", desc: "SDOT Step (4 cols)" }
+        };
+
+        // Theme colors for Canvas
+        const theme = {
+            b: 'rgba(14, 165, 233, 0.15)',      // #0ea5e9
+            half: 'rgba(34, 197, 94, 0.2)',     // #22c55e
+            sb: 'rgba(245, 158, 11, 0.3)',      // #f59e0b
+            g: 'rgba(225, 29, 72, 0.4)',        // #e11d48
+            chunk: 'rgba(139, 92, 246, 0.8)'    // #8b5cf6
+        };
+
+        function buildTier(tierId, key) {
+            const container = document.getElementById(`tier-${key}`);
+            for (let i = 0; i < config[key].count; i++) {
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.id = `card-${key}-${i}`;
+                card.innerHTML = `<div class="card-title">${config[key].title} ${i}</div><div class="card-desc">${config[key].desc}</div>`;
+                container.appendChild(card);
+            }
+        }
+
+        buildTier('tier-b', 'b');
+        buildTier('tier-half', 'half');
+        buildTier('tier-sb', 'sb');
+        buildTier('tier-g', 'g');
+        buildTier('tier-chunk', 'chunk');
+
+        // Setup Hardware & Vector DOM Slots
+        const rvL = document.getElementById('reg-vec-low');
+        const rmL = document.getElementById('reg-mat-low');
+        const rvH = document.getElementById('reg-vec-high');
+        const rmH = document.getElementById('reg-mat-high');
+        
+        const colHLow = document.getElementById('vec-h-low');
+        const colHHigh = document.getElementById('vec-h-high');
+        const colS = document.getElementById('vec-s');
+
+        // Initialize HW Slots
+        for(let i=0; i<16; i++) {
+            let svL = document.createElement('div'); svL.className = 'hw-slot v-slot L'; rvL.appendChild(svL);
+            let smL = document.createElement('div'); smL.className = 'hw-slot m-slot L'; rmL.appendChild(smL);
+            let svH = document.createElement('div'); svH.className = 'hw-slot v-slot H'; rvH.appendChild(svH);
+            let smH = document.createElement('div'); smH.className = 'hw-slot m-slot H'; rmH.appendChild(smH);
+        }
+
+        // Initialize Vertical Vector Slots
+        for(let i=0; i<16; i++) {
+            let dL = document.createElement('div'); dL.className = 'v-slot'; dL.id = `vl-${i}`; colHLow.appendChild(dL);
+            let dH = document.createElement('div'); dH.className = 'v-slot'; dH.id = `vh-${i}`; colHHigh.appendChild(dH);
+        }
+        for(let i=0; i<8; i++) {
+            let ds = document.createElement('div'); ds.className = 'v-slot'; ds.id = `vs-${i}`; ds.style.height = "44px"; colS.appendChild(ds);
+        }
+
+        function drawMatrix() {
+            let baseSb = (state.b * 256) + (state.half * 128) + (state.sb * 16);
+            CLow = baseSb + (state.chunk * 4);
+            CHigh = baseSb + 64 + (state.chunk * 4);
+            R = state.g * 4;
+
+            const mCanvas = document.getElementById('matrixCanvas');
+            const mCtx = mCanvas.getContext('2d');
+            const cw = mCanvas.width;  
+            const ch = mCanvas.height; 
+            const rowH = ch / 8;
+
+            // 1. Backgrounds
+            for (let i = 0; i < 8; i++) {
+                mCtx.fillStyle = i % 2 === 0 ? '#ffffff' : '#f8fafc';
+                mCtx.fillRect(i * 256, 0, 256, ch);
+            }
+
+            // 2. Color-synced highlights
+            mCtx.fillStyle = theme.b; mCtx.fillRect(state.b * 256, 0, 256, ch);
+            mCtx.fillStyle = theme.half; mCtx.fillRect(state.b * 256 + state.half * 128, 0, 128, ch);
+            
+            mCtx.fillStyle = theme.sb; 
+            mCtx.fillRect(baseSb, 0, 16, ch); 
+            mCtx.fillRect(baseSb + 64, 0, 16, ch);
+            
+            mCtx.fillStyle = theme.g; 
+            mCtx.fillRect(baseSb, R * rowH, 16, 4 * rowH); 
+            mCtx.fillRect(baseSb + 64, R * rowH, 16, 4 * rowH);
+            
+            mCtx.fillStyle = theme.chunk; 
+            mCtx.fillRect(CLow, R * rowH, 4, 4 * rowH); 
+            mCtx.fillRect(CHigh, R * rowH, 4, 4 * rowH);
+
+            // 3. Crisp Grid lines (shifted by 0.5px for perfect sub-pixel rendering)
+            mCtx.lineWidth = 1;
+            mCtx.strokeStyle = 'rgba(0, 0, 0, 0.1)'; 
+            mCtx.beginPath();
+            for (let r = 0; r <= 8; r++) { mCtx.moveTo(0, r * rowH + 0.5); mCtx.lineTo(cw, r * rowH + 0.5); }
+            for (let c = 0; c <= cw; c += 16) { mCtx.moveTo(c + 0.5, 0); mCtx.lineTo(c + 0.5, ch); }
+            mCtx.stroke();
+
+            // Populate Vertical Vectors (h and s)
+            for(let i=0; i<16; i++) {
+                let elL = document.getElementById(`vl-${i}`);
+                let elH = document.getElementById(`vh-${i}`);
+                
+                elL.innerText = `h${baseSb + i}`;
+                elH.innerText = `h${baseSb + 64 + i}`;
+                
+                if(i >= state.chunk * 4 && i < (state.chunk * 4) + 4) {
+                    elL.className = 'v-slot active-h'; elH.className = 'v-slot active-h';
+                } else {
+                    elL.className = 'v-slot'; elH.className = 'v-slot';
+                }
+            }
+
+            for(let i=0; i<8; i++) {
+                let elS = document.getElementById(`vs-${i}`);
+                elS.innerText = `s${i}`;
+                
+                if(i >= R && i < R + 4) {
+                    elS.className = 'v-slot active-s';
+                } else {
+                    elS.className = 'v-slot context-s'; 
+                }
+            }
+
+            document.getElementById('exact-indices').innerText = `Rows ${R}-${R+3} | Cols ${CLow}-${CLow+3} AND Cols ${CHigh}-${CHigh+3}`;
+            document.getElementById('lbl-track-low').innerText = `Low Nibble SDOT (Cols ${CLow}-${CLow+3})`;
+            document.getElementById('lbl-track-high').innerText = `High Nibble SDOT (Cols ${CHigh}-${CHigh+3})`;
+
+            const scrollContainer = document.getElementById('scroll-container');
+            scrollContainer.scrollTo({ left: CLow - (scrollContainer.clientWidth / 2) + 32, behavior: 'smooth' });
+        }
+
+        function updateMacroUI() {
+            document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
+            document.getElementById(`card-b-${state.b}`).classList.add('active');
+            document.getElementById(`card-half-${state.half}`).classList.add('active');
+            document.getElementById(`card-sb-${state.sb}`).classList.add('active');
+            document.getElementById(`card-g-${state.g}`).classList.add('active');
+            document.getElementById(`card-chunk-${state.chunk}`).classList.add('active');
+
+            drawMatrix();
+            resetHardware(); 
+        }
+
+        // --- HARDWARE PIPELINE LOGIC ---
+        function clearHwStyles() {
+            document.querySelectorAll('.active-w, .active-v, .active-v-dup, .active-math, .active-acc').forEach(e => {
+                e.classList.remove('active-w', 'active-v', 'active-v-dup', 'active-math', 'active-acc');
+            });
+            document.querySelectorAll('.hw-slot').forEach(e => { if(!e.id) e.innerHTML = ''; });
+            document.getElementById('reg-acc-low').innerText = '0';
+            document.getElementById('reg-acc-high').innerText = '0';
+        }
+
+        function resetHardware() {
+            hwStep = 0;
+            clearHwStyles();
+            document.getElementById('hw-explanation').innerHTML = "Click 'Execute' to pull the two separated nibbles simultaneously.";
+        }
+
+        function nextHwStep() {
+            hwStep++;
+            const vSlotsL = document.querySelectorAll('.v-slot.L');
+            const mSlotsL = document.querySelectorAll('.m-slot.L');
+            const vSlotsH = document.querySelectorAll('.v-slot.H');
+            const mSlotsH = document.querySelectorAll('.m-slot.H');
+
+            if (hwStep === 1) {
+                document.getElementById('hw-explanation').innerHTML = `<b>1. Extract Vectors:</b> Fetching Features h<sub>${CLow}..${CLow+3}</sub> and h<sub>${CHigh}..${CHigh+3}</sub> from the Hidden State array.`;
+                for(let i=0; i<4; i++) {
+                    vSlotsL[i].innerHTML = `<span>h<sub>${CLow+i}</sub></span>`; vSlotsL[i].classList.add('active-v');
+                    vSlotsH[i].innerHTML = `<span>h<sub>${CHigh+i}</sub></span>`; vSlotsH[i].classList.add('active-v');
+                }
+            } 
+            else if (hwStep === 2) {
+                document.getElementById('hw-explanation').innerHTML = "<b>2. Duplication (vld1q_dup_s32):</b> Spreading the 4 features across the 128-bit registers to match the 4 row groups.";
+                for(let i=0; i<16; i++) {
+                    vSlotsL[i].innerHTML = `<span>h<sub>${CLow + (i % 4)}</sub></span>`; vSlotsL[i].classList.add('active-v-dup');
+                    vSlotsH[i].innerHTML = `<span>h<sub>${CHigh + (i % 4)}</sub></span>`; vSlotsH[i].classList.add('active-v-dup');
+                }
+            }
+            else if (hwStep === 3) {
+                document.getElementById('hw-explanation').innerHTML = `<b>3. Matrix Unpacking:</b> Reconstructing Q6_K byte. Low nibbles goto q6_l, High nibbles goto q6_h (+64 offset).`;
+                let count = 0;
+                for(let r=0; r<4; r++) {
+                    for(let c=0; c<4; c++) {
+                        mSlotsL[count].innerHTML = `<span>W<sub>${R+r},${CLow+c}</sub></span>`; mSlotsL[count].classList.add('active-w');
+                        mSlotsH[count].innerHTML = `<span>W<sub>${R+r},${CHigh+c}</sub></span>`; mSlotsH[count].classList.add('active-w');
+                        count++;
+                    }
+                }
+            }
+            else if (hwStep === 4) {
+                document.getElementById('hw-explanation').innerHTML = "<b>4. Dual SDOT Execution:</b> Hardware computes 16 multiplications in the Low track AND 16 in the High track simultaneously.";
+                let count = 0;
+                for(let r=0; r<4; r++) {
+                    for(let c=0; c<4; c++) {
+                        vSlotsL[count].classList.add('active-math'); mSlotsL[count].classList.add('active-math');
+                        mSlotsL[count].innerHTML = `<span>W<sub>${R+r},${CLow+c}</sub></span><span>× h<sub>${CLow+c}</sub></span>`;
+                        
+                        vSlotsH[count].classList.add('active-math'); mSlotsH[count].classList.add('active-math');
+                        mSlotsH[count].innerHTML = `<span>W<sub>${R+r},${CHigh+c}</sub></span><span>× h<sub>${CHigh+c}</sub></span>`;
+                        count++;
+                    }
+                }
+            }
+            else if (hwStep === 5) {
+                document.getElementById('hw-explanation').innerHTML = `<b>5. Accumulate:</b> Results added to accumulators, which will ultimately be written to Logits s<sub>${R}..${R+3}</sub>.`;
+                document.querySelectorAll('.active-math').forEach(e => e.classList.remove('active-math'));
+                
+                document.getElementById('reg-acc-low').innerHTML = `<span>Σ (W × h)<sub>Low</sub></span>`;
+                document.getElementById('reg-acc-low').classList.add('active-acc');
+                
+                document.getElementById('reg-acc-high').innerHTML = `<span>Σ (W × h)<sub>High</sub></span>`;
+                document.getElementById('reg-acc-high').classList.add('active-acc');
+            }
+            else {
+                resetHardware();
+            }
+        }
+
+        // --- EVENT LISTENERS ---
+        document.getElementById('btn-forward').addEventListener('click', () => {
+            state.chunk++;
+            if (state.chunk > limits.chunk) { state.chunk = 0; state.g++;
+                if (state.g > limits.g) { state.g = 0; state.sb++;
+                    if (state.sb > limits.sb) { state.sb = 0; state.half++;
+                        if (state.half > limits.half) { state.half = 0; state.b++;
+                            if (state.b > limits.b) { state.b = 0; }
+                        }
+                    }
+                }
+            }
+            updateMacroUI();
+        });
+
+        document.getElementById('btn-back').addEventListener('click', () => {
+            state.chunk--;
+            if (state.chunk < 0) { state.chunk = limits.chunk; state.g--;
+                if (state.g < 0) { state.g = limits.g; state.sb--;
+                    if (state.sb < 0) { state.sb = limits.sb; state.half--;
+                        if (state.half < 0) { state.half = limits.half; state.b--;
+                            if (state.b < 0) { state.b = limits.b; }
+                        }
+                    }
+                }
+            }
+            updateMacroUI();
+        });
+
+        document.getElementById('btn-reset').addEventListener('click', () => {
+            state = { b: 0, half: 0, sb: 0, g: 0, chunk: 0 };
+            updateMacroUI();
+        });
+
+        document.getElementById('btn-hw-next').addEventListener('click', nextHwStep);
+        document.getElementById('btn-hw-reset').addEventListener('click', resetHardware);
+
+        // Initialize
+        updateMacroUI();
+    </script>
+</body>
+</html>
